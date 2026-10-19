@@ -7,9 +7,10 @@ PanelWindow {
     id: wallpaper
 
     readonly property Miasma pal: Miasma {}
-    // Distro- and user-agnostic: resolve against $HOME so the repo is portable.
-    // Clone github.com/AngelJumbo/gruvbox-wallpapers to ~/gruvbox-wallpapers.
-    readonly property string imagePath: "file://" + Quickshell.env("HOME") + "/gruvbox-wallpapers/wallpapers/mix/rockman.png"
+    // Ships with the rice (quickshell/wallpapers/), so no external clone is needed.
+    readonly property url localImage: Qt.resolvedUrl("wallpapers/rockman.png")
+    // Fallback for a full clone of github.com/AngelJumbo/gruvbox-wallpapers at ~/gruvbox-wallpapers.
+    readonly property url fallbackImage: "file://" + Quickshell.env("HOME") + "/gruvbox-wallpapers/wallpapers/mix/rockman.png"
 
     anchors {
         top: true
@@ -25,10 +26,14 @@ PanelWindow {
 
     Image {
         anchors.fill: parent
-        source: wallpaper.imagePath
+        source: wallpaper.localImage
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
         cache: true
         smooth: true
+
+        // Local copy missing? Use the external wallpaper collection instead.
+        onStatusChanged: if (status === Image.Error && source != wallpaper.fallbackImage)
+            source = wallpaper.fallbackImage
     }
 }

@@ -11,26 +11,44 @@ Hyprland owns windows/tiling/binds and nothing visual; Quickshell draws *all* ch
 surfaces. They talk through exactly one channel: `quickshell ipc call <target> <fn>` from a bind,
 matching an `IpcHandler` target in `quickshell/shell.qml`.
 
+```
+hypr/hyprland.lua              the live Hyprland config (Lua), Arch-ported
+hypr/legacy-hyprland.conf      hyprlang fallback for Hyprland < 0.55
+quickshell/shell.qml           ShellRoot: wallpaper + bar + panels + IPC targets
+quickshell/{Bar,Launcher,WifiPanel,AudioPanel,SystemMenu,Wallpaper,Miasma}.qml
+quickshell/wallpapers/rockman.png   1920x1080, ships with the repo
+install.sh                     packages, AUR, services, config placement
+```
+
 ## Install
 
 ```bash
-./install.sh          # symlinks hypr/ and quickshell/ into ~/.config (backs up what's there)
-./install.sh --copy   # copy instead of symlink
+./install.sh                      # packages + AUR + services + configs
+./install.sh --dry-run            # print every command, change nothing
+./install.sh --copy               # copy configs instead of symlinking
+./install.sh --no-packages        # only place the configs
+./install.sh --with-wallpapers    # also sparse-clone the wallpaper collection
 ```
 
-Packages (everything below is in `extra`/`core` — no AUR needed except the two browser/music ones):
+`install.sh` refuses to run on a non-Arch system (it drives `pacman`, `makepkg` and `systemctl`);
+`--dry-run` and `--force-distro` exist for inspecting the plan elsewhere. It is safe to re-run:
+installs are `--needed`, and an existing `~/.config/hypr` or `~/.config/quickshell` is moved to
+`<dir>.bak-<timestamp>` rather than overwritten.
+
+By hand, the same thing:
 
 ```bash
-# AUR helper first (Arch ships neither) — or build these two by hand
-sudo pacman -S --needed base-devel git && git clone https://aur.archlinux.org/paru-bin.git && (cd paru-bin && makepkg -si)
+# AUR helper first (Arch ships neither) — then the two AUR packages exist
+sudo pacman -S --needed base-devel git
+git clone https://aur.archlinux.org/paru-bin.git && (cd paru-bin && makepkg -si)
 
 sudo pacman -S --needed \
-  hyprland quickshell dunst kitty nautilus obsidian \
+  hyprland quickshell \
   networkmanager network-manager-applet nm-connection-editor \
-  pipewire wireplumber playerctl brightnessctl \
-  hyprshot grim slurp wl-clipboard \
-  xdg-desktop-portal-hyprland xdg-desktop-portal-gtk \
-  polkit-kde-agent plasma-integration ttf-jetbrains-mono ly
+  pipewire wireplumber xdg-desktop-portal-hyprland xdg-desktop-portal-gtk \
+  hyprpolkitagent plasma-integration ly \
+  dunst kitty nautilus obsidian playerctl brightnessctl \
+  hyprshot grim slurp wl-clipboard ttf-jetbrains-mono
 
 paru -S zen-browser-bin spotify spicetify-cli
 ```
@@ -47,15 +65,34 @@ paru -S zen-browser-bin spotify spicetify-cli
 | audio panel + media keys | `pipewire`, `wireplumber` | `wpctl` |
 | `playerctl`, `brightnessctl` | same names | media / brightness keys |
 | `PRINT` → `hyprshot -m region` | `hyprshot`, `grim`, `slurp`, `wl-clipboard` | hyprshot needs all three for region-to-clipboard |
-| bar font | `ttf-jetbrains-mono` | `Miasma.qml` → `JetBrains Mono` |
+| bar font | `ttf-jetbrains-mono` | `Miasma.qml` → `JetBrains Mono` (only `•│└` glyphs are used, so no Nerd Font needed) |
 | `QT_QPA_PLATFORMTHEME=kde` | `plasma-integration` | otherwise Qt silently drops the theme |
 | `xdg-desktop-portal*` | both portal packages | file pickers, screen share |
-| wallpaper | clone of [gruvbox-wallpapers](https://github.com/AngelJumbo/gruvbox-wallpapers) at `~/gruvbox-wallpapers` | `Wallpaper.qml` reads `~/gruvbox-wallpapers/wallpapers/mix/rockman.png` |
+| password prompts | `hyprpolkitagent` | a polkit agent must be running for anything GUI asking for sudo |
 | `SUPER + A` | `hermes-desktop` on `PATH` | not a package; install Hermes desktop wherever you like |
 
-Also: a **polkit agent** must be running for anything that asks for a password in a GUI, and the
-session must be told it is Wayland — see the `dbus-update-activation-environment` line in
+The session must also be told it is Wayland — see the `dbus-update-activation-environment` line in
 `hypr/hyprland.lua`.
+
+## Wallpaper
+
+`quickshell/wallpapers/rockman.png` (1920x1080) is committed, so the rice needs nothing external —
+`Wallpaper.qml` resolves it relative to its own directory, which keeps working when the config dir is
+a symlink into this repo.
+
+It came from the [gruvbox-wallpapers](https://github.com/AngelJumbo/gruvbox-wallpapers) collection,
+which **ships no LICENSE file** — the image is credited here, but the upstream project has not stated
+terms. If you would rather not redistribute it, delete the file and `Wallpaper.qml` falls back to
+`~/gruvbox-wallpapers/wallpapers/mix/rockman.png` automatically (`Image.onStatusChanged` on
+`Image.Error`). `--with-wallpapers` sparse-clones just that folder:
+
+```bash
+./install.sh --with-wallpapers
+# equivalently, without pulling the full ~3 GB collection:
+git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/AngelJumbo/gruvbox-wallpapers ~/gruvbox-wallpapers
+git -C ~/gruvbox-wallpapers sparse-checkout set wallpapers/mix
+```
 
 ## What was changed for Arch
 
@@ -69,7 +106,7 @@ byte-identical, so the theme, binds, animations and window rules are exactly as 
 | `hypr/hyprland.lua` | *(NixOS set up D-Bus activation)* | `dbus-update-activation-environment --systemd …` on start | portals/screen-share/file-pickers need the session env in the user manager |
 | `hypr/hyprland.lua` | `exec_cmd("zen")` | `exec_cmd("zen-browser")` | AUR `zen-browser-bin` installs `/usr/bin/zen-browser` — `zen` does not exist |
 | `hypr/hyprland.lua` | `$HOME/.nix-profile/bin/hermes-desktop` | `hermes-desktop` | no `~/.nix-profile` on Arch; resolves from `PATH` |
-| `quickshell/Wallpaper.qml` | `file:///home/narla/gruvbox-wallpapers/…` | `"file://" + Quickshell.env("HOME") + "/gruvbox-wallpapers/…"` | hardcoded username; this survives a different $HOME |
+| `quickshell/Wallpaper.qml` | `file:///home/narla/gruvbox-wallpapers/…` | bundled `wallpapers/rockman.png`, falling back to `Quickshell.env("HOME") + "/gruvbox-wallpapers/…"` | hardcoded username *and* a required external clone |
 | `hypr/legacy-hyprland.conf` | `$HOME/.nix-profile/bin/hermes-desktop`, `zen` | `hermes-desktop`, `zen-browser` | same two fixes in the hyprlang fallback |
 
 `hypr/legacy-hyprland.conf` is the old hyprlang config, kept only as a fallback for Hyprland
@@ -81,10 +118,14 @@ is what runs. (Renamed from `hyprland.conf.bak` so nobody mistakes it for the ac
 - `Hyprland --verify-config -c hypr/hyprland.lua` → **`config ok`** (real Hyprland 0.56 binary)
 - `qmllint` over all 8 QML files → **exit 0**, no syntax errors
 - every package name above checked against the official repo and AUR APIs
+- `install.sh --dry-run --force-distro` → runs end to end, exit 0, and leaving the live
+  `~/.config/hypr` + `~/.config/quickshell` byte-identical (sha256 of both trees compared before/after)
+- `install.sh` on this (non-Arch) box → refuses with a clear message and exit 1
+- `bash -n` clean; `rockman.png` confirmed as a real 1920x1080 image
 
 Not verified: an actual Arch session. The config was validated against Hyprland 0.56 /
 Quickshell 0.3.1 here, and Arch ships 0.56.2 / 0.3.2 — same 0.5x line, but the pixels on Arch
-are untested.
+are untested, and `install.sh`'s package steps have never actually run against pacman.
 
 ## Keybinds
 
@@ -116,3 +157,5 @@ are untested.
   `barHeight` (30).
 - QML edits reload the running shell instantly — stage a file outside `~/.config/quickshell`,
   validate, then move it in, or your desktop repaints mid-edit.
+- The bar only exists while `quickshell` runs. If the session looks bare, `pgrep quickshell`, then
+  `quickshell -d`.
